@@ -9,7 +9,11 @@
 
 
 #define n 2 			//unit cells per direction
-#define T 5
+#define T 5			//Temperature (actually kT/m)
+#define dt 0.001			//timestep
+#define iterations 1000		//number of iterations
+#define loopsperprint 10	//loops before another print is made
+
 
 #define N 4*n*n*n		//number of particles
 #define rho 0.2			//number density
@@ -18,13 +22,13 @@
 
 double pos[N][3]={};		//positions
 double vel[N][3]={};		//velocities
-
-
+double t=0;
 
 void initialize();
 void print();
 double normalrand();
-
+void displace(int p);
+double mod(double num, double div);
 
 using namespace std;
 //using namespace arma;
@@ -41,25 +45,33 @@ int main()
 		return 1;
 	}
 	initialize();
-	ofstream file("output.dat");
-	for (int i=0;i<10000;i++)
-		file << normalrand() << " ";
-	
 	print();
-	cout << "printed particles\n";
-	
+	for (int loop = 0; loop < iterations; loop++)
+	{
+		if (loop%loopsperprint==0) print();
+		for (int i = 0; i < N; i++)
+		{
+			displace(i);
+		}
+		t += dt;
+	}
 	return 0;
+}
+
+void displace(int p)
+{
+	for (int i=0;i<3;i++)
+	{
+		pos[p][i] = mod( pos[p][i] +vel[p][i] * dt, L);
+	}
 }
 
 void print()
 {
-	static int filecount=0;
+	static int filecount=1;
 	char filename[100];
-	sprintf(filename,"fcc.dat");
+	sprintf(filename,"images/fcc-%04d.dat",filecount);
 	ofstream file(filename);
-
-	filecount+=1;
-	
 	file << N << endl;
 	file << "0 " << L << endl;
 	file << "0 " << L << endl;
@@ -67,6 +79,7 @@ void print()
 	for (int i=0;i<N;i++)
 		file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " 1" << endl;
 	file.close();
+	filecount++;
 
 }
 
@@ -82,10 +95,14 @@ void initialize()
 				pos[i][0] = (x * d + (d/2) * (z % 2));
 				pos[i][1] = y * d;
 				pos[i][2] = z * d/2;
+				for (int j=0;j<3;j++)
+					vel[i][j]=normalrand();
 				i++;
 				pos[i][0] = (x + 1/2.) * d + (d/2) * (z % 2);
 				pos[i][1] = (y + 1/2.) * d;
 				pos[i][2] = z * d / 2;
+				for (int j=0;j<3;j++)
+					vel[i][j]=normalrand();
 				i++;
 			}
 }
@@ -94,7 +111,7 @@ double normalrand()
 {
 	static double second;
 	static bool extra=0;
-	
+
 	if (extra==1)
 	{
 		extra=0;
@@ -109,6 +126,11 @@ double normalrand()
 		extra = 1;
 		return u;
 	}
+}
+
+double mod(double num,double div)
+{
+	return num - floor(num/div) * div;
 }
 
 /*void print()
