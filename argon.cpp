@@ -9,34 +9,33 @@
 
 
 #define n 2 			//unit cells per direction
-#define T 5			//Temperature (actually kT/m)
+#define T 0.2			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
 
-#define dt 0.001		//timestep
+#define dt 0.0001		//timestep
 #define iterations 100		//number of iterations
-#define loopsperprint 10	//loops before another print is made
+#define loopsperprint 1	//loops before another print is made
 
 
 #define N 4*n*n*n		//number of particles
-#define rho 0.2			//number density
+#define rho 0.02			//number density
 #define L pow(N/rho,1/3.0)	//box dimension
 #define pi 3.141592653589793
 #define ecut 4*(1/pow(rc2,6) - 1/pow(rc2,3))
 
-double pos[N][3][2]={};		//positions
+double pos[N][3]={};		//positions
 double vel[N][3]={};		//velocities
 double force[N][3]={};		//forces
 double energy=0;		//energy
 double t=0;
 
-bool isnew=0;
 
 void initialize();
 void calcforce();
 double dist(int i, int j,int coord=3);	//if coord=3, it returns the norm, else it returns the distance in coord dimension
 void print();
 double normalrand();
-void displace(int p);
+void displace();
 double mod(double num, double div);
 
 using namespace std;
@@ -57,25 +56,24 @@ int main()
 	print();
 	for (int loop = 0; loop < iterations; loop++)
 	{
-		calcforce();
 		if (loop%loopsperprint==0) print();
-		for (int i = 0; i < N; i++)
-		{
-			displace(i);
-		}
+		calcforce();
+		cout << energy << endl;
+		displace();
 		t += dt;
 	}
 	return 0;
 }
 
 
-void displace(int p)
+void displace()
 {
 	for (int p=0;p<N;p++)
 	{
 		for (int i=0;i<3;i++)
 		{
-			pos[p][i][isnew] = mod( pos[p][i][isnew] +vel[p][i] * dt, L);
+			pos[p][i] = mod(2*pos[p][i] -pos[p][i] + force[p][i]*dt*dt, L);
+			vel[p][i]+=force[p][i]*dt;
 		}
 	}
 }
@@ -102,7 +100,7 @@ void calcforce()
 				for (int k=0;k<3;k++)
 				{
 					force[i][k] += f*dr[k];
-					force[j][k] -= f*dr[k];
+					force[j][k] _= f*dr[k];
 				}
 				energy += 4*r6i *(r6i - 1) - ecut;
 				//printf("{%f,%f,%f}, {%f,%f,%f}, dr={%f,%f,%f}\nf=(%f,%f,%f)\n",pos[i][0],pos[i][1],pos[i][2],pos[j][0],pos[j][1],pos[j][2],dr[0],dr[1],dr[2],force[i][0],force[i][1],force[i][2]);
@@ -116,7 +114,7 @@ double dist(int i, int j, int coord)
 	double dr=0;
 	if (coord!=3)
 	{
-		dr = pos[i][coord][isnew] - pos[j][coord][isnew];
+		dr = pos[i][coord] - pos[j][coord];
 		dr = dr - round(dr / L) * L;
 		return dr;
 	}
@@ -125,7 +123,7 @@ double dist(int i, int j, int coord)
 		double dx;
 		for (int k = 0; k < 3 ; k++)
 		{
-			dx = pos[i][k][isnew] - pos[j][k][isnew];
+			dx = pos[i][k] - pos[j][k];
 			dx = dx - round(dx / L) * L;
 			dr += dx * dx;
 		}
@@ -145,7 +143,7 @@ void print()
 	file << "0 " << L << endl;
 	file << "0 " << L << endl;
 	for (int i=0;i<N;i++)
-		file << pos[i][0][isnew] << " " << pos[i][1][isnew] << " " << pos[i][2][isnew] << " 1" << endl;
+		file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " 1" << endl;
 	file.close();
 	filecount++;
 
@@ -160,25 +158,21 @@ void initialize()
 			for (int x=0;x<n;x++)
 			{
 
-				pos[i][0][isnew] = (x * d + (d/2) * (z % 2));
-				pos[i][1][isnew] = y * d;
-				pos[i][2][isnew] = z * d/2;
+				pos[i][0] = (x * d + (d/2) * (z % 2));
+				pos[i][1] = y * d;
+				pos[i][2] = z * d/2;
 				for (int j=0;j<3;j++)
 					vel[i][j]=normalrand();
 				i++;
-				pos[i][0][isnew] = (x + 1/2.) * d + (d/2) * (z % 2);
-				pos[i][1][isnew] = (y + 1/2.) * d;
-				pos[i][2][isnew] = z * d / 2;
+				pos[i][0] = (x + 1/2.) * d + (d/2) * (z % 2);
+				pos[i][1] = (y + 1/2.) * d;
+				pos[i][2] = z * d / 2;
 				for (int j=0;j<3;j++)
 					vel[i][j]=normalrand();
 				i++;
 			}
 	//FCC Lattice is created
 	calcforce();
-	//Now give positions the moment before t=0
-	for (int i=0;i<N;i++)
-		for (int coord=0;coord < 3; coord++)
-			x[i][coord][1-isnew] = x[i][coord][isnew] - vel[i][coord] * dt - 0.5 * force[i][coord] * dt * dt;
 }
 
 double normalrand()
