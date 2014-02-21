@@ -4,21 +4,24 @@
 #include <math.h>
 #include <fstream>
 #include <stdlib.h>
+#include <ctime>
+#include <cstring>
 //#include <plplot/plstream.h>
 //#include <armadillo>
 
 
+#define rho 0.1			//number density
 #define n 2 			//unit cells per direction
-#define T 0.2			//Temperature (actually kT/m)
+#define T 1			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
 
-#define dt 0.0001		//timestep
-#define iterations 100		//number of iterations
-#define loopsperprint 1	//loops before another print is made
+#define dt 0.00001		//timestep
+#define iterations 1000000		//number of iterations
+#define loopsperprint 10000	//loops before another print is made
 
+#define notices 10
 
 #define N 4*n*n*n		//number of particles
-#define rho 0.02			//number density
 #define L pow(N/rho,1/3.0)	//box dimension
 #define pi 3.141592653589793
 #define ecut 4*(1/pow(rc2,6) - 1/pow(rc2,3))
@@ -42,25 +45,32 @@ using namespace std;
 //using namespace arma;
 int main()
 {
+	srand48(2);//(long)time(NULL));
 	if (rho > sqrt(2))//Must find correct value
 	{
 		cout << "Density cannot be larger than sqrt(2)" << endl;
 		return 1;
 	}
-	if (n%2==1)
+	/*if (n%2==1)
 	{
 		cout << "Must be an even number of particles" << endl;
 		return 1;
-	}
+	}*/
 	initialize();
 	print();
-	for (int loop = 0; loop < iterations; loop++)
+	clock_t begin = clock();
+	for (int perc=0; perc < notices; perc++)
 	{
-		if (loop%loopsperprint==0) print();
-		calcforce();
-		cout << energy << endl;
-		displace();
-		t += dt;
+		for (int loop = 0; loop < iterations/notices; loop++)
+		{
+			if (loop%loopsperprint==0) print();
+			//calcforce();
+			displace();
+			t += dt;
+		}
+		cout << "Percent done: " << (perc+1) * 100 / notices << "%";
+		cout << "\ttime simulated: " << double(clock() - begin) / CLOCKS_PER_SEC;
+		cout << "\t time left: " << ((notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC << endl;
 	}
 	return 0;
 }
@@ -72,17 +82,23 @@ void displace()
 	{
 		for (int i=0;i<3;i++)
 		{
-			pos[p][i] = mod(2*pos[p][i] -pos[p][i] + force[p][i]*dt*dt, L);
-			vel[p][i]+=force[p][i]*dt;
+			vel[p][i]+=force[p][i]*dt/2.;
+			pos[p][i] = mod(pos[p][i] + vel[p][i] * dt, L);
 		}
 	}
+	calcforce();
+	for (int p=0;p<N;p++)
+		for (int i=0;i<3;i++)
+			vel[p][i] += force[p][i] * dt / 2.;
 }
+
 
 
 
 void calcforce()
 {
 	energy=0;
+	memset(force,0,sizeof(force));
 	for (int i=0; i<N; i++)
 	{
 		for (int j=i+1; j<N; j++)
@@ -100,7 +116,7 @@ void calcforce()
 				for (int k=0;k<3;k++)
 				{
 					force[i][k] += f*dr[k];
-					force[j][k] _= f*dr[k];
+					force[j][k] -= f*dr[k];
 				}
 				energy += 4*r6i *(r6i - 1) - ecut;
 				//printf("{%f,%f,%f}, {%f,%f,%f}, dr={%f,%f,%f}\nf=(%f,%f,%f)\n",pos[i][0],pos[i][1],pos[i][2],pos[j][0],pos[j][1],pos[j][2],dr[0],dr[1],dr[2],force[i][0],force[i][1],force[i][2]);
@@ -144,6 +160,9 @@ void print()
 	file << "0 " << L << endl;
 	for (int i=0;i<N;i++)
 		file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " 1" << endl;
+	file.close();
+	file.open("output.dat",fstream::app);
+	file << energy << endl;
 	file.close();
 	filecount++;
 
