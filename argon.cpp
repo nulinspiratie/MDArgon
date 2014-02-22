@@ -11,15 +11,15 @@
 
 
 #define rho 0.1			//number density
-#define n 2 			//unit cells per direction
+#define n 4 			//unit cells per direction
 #define T 1			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
 
 #define dt 0.00001		//timestep
-#define iterations 1000000		//number of iterations
+#define iterations 1000000	//number of iterations
 #define loopsperprint 10000	//loops before another print is made
 
-#define notices 10
+#define notices 20
 
 #define N 4*n*n*n		//number of particles
 #define L pow(N/rho,1/3.0)	//box dimension
@@ -29,7 +29,8 @@
 double pos[N][3]={};		//positions
 double vel[N][3]={};		//velocities
 double force[N][3]={};		//forces
-double energy=0;		//energy
+double epot=0;			//potential energy
+double ekin=0;			//kinetic energy
 double t=0;
 
 
@@ -51,13 +52,9 @@ int main()
 		cout << "Density cannot be larger than sqrt(2)" << endl;
 		return 1;
 	}
-	/*if (n%2==1)
-	{
-		cout << "Must be an even number of particles" << endl;
-		return 1;
-	}*/
 	initialize();
 	print();
+	cout << "Starting Simulation\n";
 	clock_t begin = clock();
 	for (int perc=0; perc < notices; perc++)
 	{
@@ -70,7 +67,8 @@ int main()
 		}
 		cout << "Percent done: " << (perc+1) * 100 / notices << "%";
 		cout << "\ttime simulated: " << double(clock() - begin) / CLOCKS_PER_SEC;
-		cout << "\t time left: " << ((notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC << endl;
+		cout << "\t time left: " << (double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC << endl;
+		cout << (double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC << "s = " << floor(((double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC)/60) << "m " << mod(((double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC),60) << "s" << endl;
 	}
 	return 0;
 }
@@ -78,15 +76,19 @@ int main()
 
 void displace()
 {
+	ekin=0;
 	for (int p=0;p<N;p++)
 	{
 		for (int i=0;i<3;i++)
 		{
-			vel[p][i]+=force[p][i]*dt/2.;
+			vel[p][i] += force[p][i]*dt/2.;
+			ekin += 0.5 * pow(vel[p][i],2);
 			pos[p][i] = mod(pos[p][i] + vel[p][i] * dt, L);
 		}
 	}
 	calcforce();
+	//cout << "epot=" << epot << endl;
+	//cin.ignore();
 	for (int p=0;p<N;p++)
 		for (int i=0;i<3;i++)
 			vel[p][i] += force[p][i] * dt / 2.;
@@ -97,7 +99,7 @@ void displace()
 
 void calcforce()
 {
-	energy=0;
+	epot=0;
 	memset(force,0,sizeof(force));
 	for (int i=0; i<N; i++)
 	{
@@ -118,7 +120,7 @@ void calcforce()
 					force[i][k] += f*dr[k];
 					force[j][k] -= f*dr[k];
 				}
-				energy += 4*r6i *(r6i - 1) - ecut;
+				epot += 4*r6i *(r6i - 1) - ecut;
 				//printf("{%f,%f,%f}, {%f,%f,%f}, dr={%f,%f,%f}\nf=(%f,%f,%f)\n",pos[i][0],pos[i][1],pos[i][2],pos[j][0],pos[j][1],pos[j][2],dr[0],dr[1],dr[2],force[i][0],force[i][1],force[i][2]);
 			}
 		}
@@ -161,8 +163,11 @@ void print()
 	for (int i=0;i<N;i++)
 		file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " 1" << endl;
 	file.close();
-	file.open("output.dat",fstream::app);
-	file << energy << endl;
+	if (filecount==1)
+		file.open("output.dat");
+	else	
+		file.open("output.dat",fstream::app);
+	file << ekin + epot << " " << ekin << " " << epot << endl;
 	file.close();
 	filecount++;
 
