@@ -1,7 +1,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdio.h>
-#include <math.h>
+#include <cmath>
 #include <fstream>
 #include <stdlib.h>
 #include <ctime>
@@ -12,19 +12,21 @@
 
 #define rho 0.1			//number density
 #define n 4 			//unit cells per direction
-#define T 1			//Temperature (actually kT/m)
+#define T 0.1			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
 
 #define dt 0.00001		//timestep
 #define iterations 1000000	//number of iterations
 #define loopsperprint 10000	//loops before another print is made
+#define listinterval 100	//Update verlet list every listinterval loops
 
-#define notices 20
+#define notices 10
 
 #define N 4*n*n*n		//number of particles
 #define L pow(N/rho,1/3.0)	//box dimension
 #define pi 3.141592653589793
 #define ecut 4*(1/pow(rc2,6) - 1/pow(rc2,3))
+#define rv2 rc2			//Verlet list cutoff distance
 
 double pos[N][3]={};		//positions
 double vel[N][3]={};		//velocities
@@ -32,11 +34,13 @@ double force[N][3]={};		//forces
 double epot=0;			//potential energy
 double ekin=0;			//kinetic energy
 double t=0;
+int nlist[N]={};		//Verlet particle number list
+double list[N][N]={};
 
-
+void updatelist();
 void initialize();
 void calcforce();
-double dist(int i, int j,int coord=3);	//if coord=3, it returns the norm, else it returns the distance in coord dimension
+double dist(int i, int j,int coord=3);	//if coord=3, it returns the norm squared, else it returns the distance in coord dimension
 void print();
 double normalrand();
 void displace();
@@ -46,33 +50,53 @@ using namespace std;
 //using namespace arma;
 int main()
 {
+	cout << "\n\n\n\n";
+	cout << "Molecular Dynamics simulation of Argon\n\n";
+	cout << "Number of particles: " << N << endl;
+	cout << "Density: " << rho << endl;
+	cout << "Box length: " << L << endl;
+	cout << "Temperature: " << T << endl;
+	cout << "dt: " << dt << "s\t iterations: " << iterations << endl;
+	cout << "simulation time: " << dt * iterations << " seconds\n";
+	
 	srand48(2);//(long)time(NULL));
-	if (rho > sqrt(2))//Must find correct value
-	{
-		cout << "Density cannot be larger than sqrt(2)" << endl;
-		return 1;
-	}
 	initialize();
-	print();
 	cout << "Starting Simulation\n";
 	clock_t begin = clock();
+	updatelist();
+	calcforce();
+	print();
 	for (int perc=0; perc < notices; perc++)
 	{
 		for (int loop = 0; loop < iterations/notices; loop++)
 		{
+			if (loop%listinterval==0) updatelist();
 			if (loop%loopsperprint==0) print();
 			//calcforce();
 			displace();
 			t += dt;
 		}
 		cout << "Percent done: " << (perc+1) * 100 / notices << "%";
-		cout << "\ttime simulated: " << double(clock() - begin) / CLOCKS_PER_SEC;
-		cout << "\t time left: " << (double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC << endl;
-		cout << (double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC << "s = " << floor(((double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC)/60) << "m " << mod(((double(notices - perc) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC),60) << "s" << endl;
-	}
+		cout << "\ttime simulated: " << double(clock() - begin) / CLOCKS_PER_SEC << " s";
+		double timeleft = (double(notices - (perc+1)) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC;
+		cout << "\t time left: " << floor(timeleft/60) << "m " << round(mod(timeleft,60)) << "s\n";
+		}
 	return 0;
 }
 
+void updatelist()
+{
+	memset(nlist,0,sizeof(nlist));
+	for (int i=0; i<N-1; i++)
+		for (int j=i+1; j<N; j++)
+			if( dist(i,j,3) < rc2)
+			{
+				//nlist[j]++;
+				list[i][nlist[i]] = j;
+				nlist[i]++;
+				//list[j][nlist[j]] = i;
+			}
+}
 
 void displace()
 {
@@ -82,7 +106,7 @@ void displace()
 		for (int i=0;i<3;i++)
 		{
 			vel[p][i] += force[p][i]*dt/2.;
-			ekin += 0.5 * pow(vel[p][i],2);
+			ekin += 0.5 * vel[p][i] * vel[p][i];
 			pos[p][i] = mod(pos[p][i] + vel[p][i] * dt, L);
 		}
 	}
@@ -99,30 +123,31 @@ void displace()
 
 void calcforce()
 {
-	epot=0;
 	memset(force,0,sizeof(force));
-	for (int i=0; i<N; i++)
+	epot = 0;
+	for (int i=0;i<N;i++)
 	{
-		for (int j=i+1; j<N; j++)
+		for (int pn=0; pn<nlist[i]; pn++)
 		{
+			int j=list[i][pn];//This is the correct particle number
+			//cout << "i,j=" << i << "," << j << "\t";
+			//cin.ignore();
 			double dr[3];
 			dr[0]=dist(i,j,0);
 			dr[1]=dist(i,j,1);
 			dr[2]=dist(i,j,2);
-			double dr2 = dr[0]*dr[0] + dr[1]*dr[1] + dr[2]*dr[2];
-			if (dr2 < rc2)
+			double r2i = 1./(dr[0]*dr[0] + dr[1]*dr[1] + dr[2]*dr[2]);
+			//cout << r2i;
+			//cin.ignore();
+			double r6i = r2i * r2i * r2i;
+			double f=48*r2i*r6i*(r6i-0.5);       //Lennard-Jones Potential
+			for (int k=0;k<3;k++)
 			{
-				double r2i = 1/dr2;
-				double r6i = pow(r2i,3);
-				double f=48*r2i*r6i*(r6i-0.5); 	//Lennard-Jones Potential
-				for (int k=0;k<3;k++)
-				{
-					force[i][k] += f*dr[k];
-					force[j][k] -= f*dr[k];
-				}
-				epot += 4*r6i *(r6i - 1) - ecut;
-				//printf("{%f,%f,%f}, {%f,%f,%f}, dr={%f,%f,%f}\nf=(%f,%f,%f)\n",pos[i][0],pos[i][1],pos[i][2],pos[j][0],pos[j][1],pos[j][2],dr[0],dr[1],dr[2],force[i][0],force[i][1],force[i][2]);
+				force[i][k] += f*dr[k];
+				force[j][k] -= f*dr[k];
 			}
+			epot += 4*r6i *(r6i - 1) - ecut;
+
 		}
 	}
 }
@@ -130,19 +155,19 @@ void calcforce()
 double dist(int i, int j, int coord)
 {
 	double dr=0;
-	if (coord!=3)
+	if (coord!=3) //Returns distance (may be negative)
 	{
 		dr = pos[i][coord] - pos[j][coord];
-		dr = dr - round(dr / L) * L;
+		dr -= round(dr / L) * L;
 		return dr;
 	}
-	else
+	else //Returns the distance squared (always positive)
 	{
 		double dx;
 		for (int k = 0; k < 3 ; k++)
 		{
 			dx = pos[i][k] - pos[j][k];
-			dx = dx - round(dx / L) * L;
+			dx -= round(dx / L) * L;
 			dr += dx * dx;
 		}
 		return dr;
@@ -169,6 +194,14 @@ void print()
 		file.open("output.dat",fstream::app);
 	file << ekin + epot << " " << ekin << " " << epot << endl;
 	file.close();
+
+	/*Temporary check for maximum velocity
+	  double maxvel=0;
+	  for (int i=0;i<N;i++)
+	  for (int coord=0;coord<3;coord++)
+	  if (abs(vel[i][coord])>maxvel) maxvel = vel[i][coord];
+	  cout << "Maximum velocity = " << maxvel << endl;
+	  */
 	filecount++;
 
 }
@@ -196,7 +229,6 @@ void initialize()
 				i++;
 			}
 	//FCC Lattice is created
-	calcforce();
 }
 
 double normalrand()
@@ -225,39 +257,5 @@ double mod(double num,double div)
 	return num - floor(num/div) * div;
 }
 
-/*void print()
-  {
-  plclear();
-  plcol0(1);//Sets color (red)
-  plbox3("bnstu", "x", 0, 0, "bnstu", "y", 0, 0, "bcnmstuv", "z", 0, 0);//Draws box with axes
-  plcol0(2);//Sets color
-
-//Now the tricky part: getting the rows of pos into plpoin3
-//cout << pos;
-double x[N],y[N],z[N];
-for (int i=0;i<N;i++)
-{
-x[i]=pos[i][0];
-y[i]=pos[i][1];
-z[i]=pos[i][2];
-}
-plpoin3(N,x,y,z,4);
-plflush();
-
-Below should be used to initialise
-plsdev("xcairo");
-plinit();
-pladv(0);
-plvpor(0,1,0,1);
-plwind(-1, 1, -2/3, 4 / 3);
-plw3d(1, 1, 1, 0, box[0], 0, box[1], 0, box[2], 30, -45);//Viewing angle and sizes
-print();
-cin.ignore();
-plspause(false);
-plend();
-
-
-
-}*/
 
 
