@@ -11,23 +11,23 @@
 //#include <armadillo>
 
 
-#define rho 0.1			//number density
-#define n 4 			//unit cells per direction
-#define T 10			//Temperature (actually kT/m)
+#define rho 0.65			//number density
+#define n 5 			//unit cells per direction
+#define T 0.900			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
 
-#define dt 0.00000000001		//timestep
-#define iterations 500000	//number of iterations
+#define dt 0.0001		//timestep
+#define iterations 150000	//number of iterations
 
-#define thermiter 100000	//number of thermalization iterations
+#define thermiter 50000	//number of thermalization iterations
 #define rescaleiter 1000	//number of iterations between temperature rescaling
 
-#define loopsperdatastore 1000	//loops before data is stored
+#define loopsperdatastore 100	//loops before data is stored
 #define loopsperthermdatastore 100	//loops before thermalization data is stored
 #define loopsperimage 100000	//loops before another printed image is made
 #define listinterval 100	//Update verlet list every listinterval loops
 
-#define notices 10
+#define notices 5
 
 #define N 4*n*n*n		//number of particles
 #define L pow(N/rho,1/3.0)	//box dimension
@@ -45,6 +45,8 @@ double einit=0;			//initial energy
 double t=0;
 double tmeasurestart=0;		//Actual measurement starting time
 double diffusion=0;		//Diffusion
+double pressure=0;
+
 clock_t begin;
 int nlist[N]={};		//Verlet particle number list
 double list[N][N]={};
@@ -54,6 +56,7 @@ char filename[100];
 double instantaneoustemp();
 void updatelist();
 void initialize();
+void correctvelocities();
 void calcforce();
 void calcekin();			//To calculate the initial kinetic energy
 double dist(int i, int j,int coord=3);	//if coord=3, it returns the norm squared, else it returns the distance in coord dimension
@@ -74,7 +77,8 @@ int main()
 	cout << "Density: " << rho << endl;
 	cout << "Box length: " << L << endl;
 	cout << "Temperature: " << T << endl;
-	cout << "dt: " << dt << "s\t iterations: " << iterations << endl;
+	cout << "dt: " << dt << " s" << endl;
+	cout << "Thermalization iterations: " << thermiter << "\t iterations: " << iterations << endl;
 	cout << "Thermalization time: " << dt * thermiter << " seconds\n";
 	cout << "simulation time: " << dt * iterations << " seconds\n";
 
@@ -107,7 +111,6 @@ int main()
 	updatelist();		//Create first verlet list
 	calcforce();		//Calculate initial force and potential energy
 	calcekin();		//Calculate initial kinetic energy
-	einit = epot + ekin;
 	printimage();
 	output(0);//Also write output to file
 	cout << "Starting thermalization\n";
@@ -119,15 +122,8 @@ int main()
 			if (loop%loopsperimage==0) printimage();
 			if (loop%loopsperthermdatastore==0) printdata(1);
 			
-			if (loop%rescaleiter==0)//Rescale velocities for correct temperature
-			{
-				double lambda = sqrt( (N-1) * 3 * T / (2 * N * ekin));
-				for (int i=0;i<N;i++)
-					for (int j=0;j<3;j++)
-						vel[i][j] *= lambda;
-
-			}
-
+			if (loop%rescaleiter==0) correctvelocities();	//Rescale velocities for correct temperature
+		
 			displace();
 			t += dt;
 		}
@@ -143,7 +139,9 @@ int main()
 	for (int i=0;i<N;i++)			//Initial positions for diffusion
 		for (int j=0;j<3;j++)
 			posinit[i][j] = pos[i][j];
+	correctvelocities();
 	cout << "Temperature equals " << instantaneoustemp() << endl;
+	einit = epot + ekin;
 
 	for (int perc=0; perc < notices; perc++)
 	{
@@ -161,6 +159,7 @@ int main()
 		double current = (double)(thermiter +  double(perc+1)/notices * iterations);
 		double timeleft = ((total/current - 1)  * double(clock() - begin)) / CLOCKS_PER_SEC;
 		cout << "\t time left: " << floor(timeleft/60) << "m " << round(mod(timeleft,60)) << "s\n";
+		cout << "diffusion: " << diffusion << "\tpressure: " << pressure << endl;
 	}
 	diffusion=0;
 	for (int i=0;i<N;i++)
@@ -183,6 +182,15 @@ double instantaneoustemp()
 		for (int j = 0; j < 3; j++)
 			sum+= vel[i][j] * vel[i][j];
 	return sum / (3 * (N-1));
+}
+
+void correctvelocities()
+{
+	double lambda = sqrt( (N-1) * 3 * T / (2 * N * ekin));
+	for (int i=0;i<N;i++)
+		for (int j=0;j<3;j++)
+			vel[i][j] *= lambda;
+
 }
 
 void updatelist()
@@ -211,7 +219,7 @@ void displace()
 			pos[p][i] = pos[p][i] + vel[p][i] * dt;
 		}
 	}
-	ekin /= N ;	//To make it per particle
+	ekin /= double(N) ;	//To make it per particle
 	calcforce();
 	//cout << "epot=" << epot << endl;
 	//cin.ignore();
@@ -227,6 +235,7 @@ void calcforce()
 {
 	memset(force,0,sizeof(force));
 	epot = 0;
+	pressure=0;
 	for (int i=0;i<N;i++)
 	{
 		for (int pn=0; pn<nlist[i]; pn++)
@@ -241,8 +250,6 @@ void calcforce()
 			double dr2 = (dr[0]*dr[0] + dr[1]*dr[1] + dr[2]*dr[2]);
 			if (dr2 < rc2)
 			{
-				//cout << r2i;
-				//cin.ignore();
 				double r2i = 1./dr2;
 				double r6i = r2i * r2i * r2i;
 				double f=48*r2i*r6i*(r6i-0.5);       //Lennard-Jones Potential
@@ -251,11 +258,13 @@ void calcforce()
 					force[i][k] += f*dr[k];
 					force[j][k] -= f*dr[k];
 				}
+				pressure += f * dr2;
 				epot += 4*r6i *(r6i - 1) - ecut;
 			}
 		}
 	}
 	epot /= N;
+	pressure = 1 + pressure/double(N*3*T);
 }
 
 void calcekin()
@@ -263,7 +272,7 @@ void calcekin()
 	for (int p=0; p<N; p++)
 		for (int i=0;i<3;i++)
 			ekin += 0.5 * vel[p][i] * vel[p][i];
-	ekin /= N;
+	ekin /= double(N);
 }
 
 double dist(int i, int j, int coord)
@@ -311,8 +320,7 @@ void printdata(bool thermalize,double time)
 			for (int j=0;j<3;j++)
 				diffusion+=(pos[i][j] - posinit[i][j]) * (pos[i][j] - posinit[i][j]);
 		diffusion/= 6. * N * time;
-
-		file << ekin + epot << " " << ekin << " " << epot << " " << diffusion << endl;
+		file << ekin + epot << " " << ekin << " " << epot << " " << diffusion << " " << instantaneoustemp() << " " << pressure << endl;
 	}
 	file.close();
 }
@@ -348,17 +356,17 @@ void output(int stage)
 	ofstream file(filename,fstream::app);	
 	if (stage ==0)
 	{
-	file << "\n\n\n\n";
-	file << "Molecular Dynamics simulation of Argon\n\n";
-	file << "Number of particles: " << N << endl;
-	file << "Density: " << rho << endl;
-	file << "Box length: " << L << endl;
-	file << "Temperature: " << T << endl;
-	file << "Thermalization iterations: " << thermiter << "\t measurement iterations" << iterations << endl;
-	file << "dt: " << dt << "s" << endl;
-	file << "Thermalization time: " << dt * thermiter << " seconds\n";
-	file << "simulation time: " << dt * iterations << " seconds\n";
-	file << "Initial energy: " << einit << "\n\n";
+		file << "\n\n\n\n";
+		file << "Molecular Dynamics simulation of Argon\n\n";
+		file << "Number of particles: " << N << endl;
+		file << "Density: " << rho << endl;
+		file << "Box length: " << L << endl;
+		file << "Temperature: " << T << endl;
+		file << "Thermalization iterations: " << thermiter << "\t measurement iterations: " << iterations << endl;
+		file << "dt: " << dt << "s" << endl;
+		file << "Thermalization time: " << dt * thermiter << " seconds\n";
+		file << "simulation time: " << dt * iterations << " seconds\n";
+		file << "Initial energy: " << einit << "\n\n";
 	}
 	else if (stage ==1)
 	{
@@ -379,6 +387,7 @@ void output(int stage)
 void initialize()
 {
 	double d=pow(4/rho,1/3.0);
+	double sumv[3]={};	//velocity centre of mass
 	int i=0;
 	for (int z=0;z<2*n;z++)
 		for (int y=0;y<n;y++)
@@ -389,15 +398,25 @@ void initialize()
 				pos[i][1] = y * d;
 				pos[i][2] = z * d/2;
 				for (int j=0;j<3;j++)
+				{
 					vel[i][j]=normalrand();
+					sumv[j]+=vel[i][j];
+				}
 				i++;
 				pos[i][0] = (x + 1/2.) * d + (d/2) * (z % 2);
 				pos[i][1] = (y + 1/2.) * d;
 				pos[i][2] = z * d / 2;
 				for (int j=0;j<3;j++)
+				{
 					vel[i][j]=normalrand();
+					sumv[j] +=vel[i][j];
+				}
 				i++;
 			}
+	printf("Centre of mass equals: (%g,%g,%g), now correcting\n",sumv[0],sumv[1],sumv[2]);
+	for (i=0;i<N;i++)
+		for (int j=0;j<3;j++)
+			vel[i][j] -=sumv[j]/double(N);
 	//FCC Lattice is created
 }
 
