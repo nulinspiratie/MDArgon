@@ -1,3 +1,7 @@
+//DATA OUTPUT
+//thermdata.dat: 1.Etot - 2.Ekin - 3.Epot
+//data.dat: 1.Etot - 2.Ekin - 3.Epot - 4.diffusion - 5.temp - 6.pressure
+
 #include <cstdlib>
 #include <iostream>
 #include <stdio.h>
@@ -7,25 +11,24 @@
 #include <ctime>
 #include <cstring>
 #include <sys/stat.h>
-//#include <plplot/plstream.h>
-//#include <armadillo>
 
 
-#define rho 0.65			//number density
-#define n 5 			//unit cells per direction
-#define T 0.900			//Temperature (actually kT/m)
+#define rho 0.80			//number density
+#define n 6 			//unit cells per direction
+#define T 1.01			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
+#define drv2 3			//Extra length for nn list
 
-#define dt 0.0001		//timestep
-#define iterations 150000	//number of iterations
+#define dt 0.001		//timestep
+#define iterations 20000	//number of iterations
 
-#define thermiter 50000	//number of thermalization iterations
-#define rescaleiter 1000	//number of iterations between temperature rescaling
+#define thermiter 5000	//number of thermalization iterations
+#define rescaleiter 500	//number of iterations between temperature rescali
 
 #define loopsperdatastore 100	//loops before data is stored
-#define loopsperthermdatastore 100	//loops before thermalization data is stored
+#define loopsperthermdatastore 50	//loops before thermalization data is stored
 #define loopsperimage 100000	//loops before another printed image is made
-#define listinterval 100	//Update verlet list every listinterval loops
+#define listinterval 10		//Update verlet list every listinterval loops
 
 #define notices 5
 
@@ -33,7 +36,7 @@
 #define L pow(N/rho,1/3.0)	//box dimension
 #define pi 3.141592653589793
 #define ecut 4*(1/pow(rc2,6) - 1/pow(rc2,3))
-#define rv2 rc2+0.5		//Verlet list cutoff distance
+#define rv2 rc2 + drv2		//Verlet list cutoff distance
 
 double pos[N][3]={};		//positions
 double posinit[N][3]={};	//Positions right after thermalization (For diffusion)
@@ -57,6 +60,7 @@ double instantaneoustemp();
 void updatelist();
 void initialize();
 void correctvelocities();
+void calcrdf();				//Calculate the radial distribution function
 void calcforce();
 void calcekin();			//To calculate the initial kinetic energy
 double dist(int i, int j,int coord=3);	//if coord=3, it returns the norm squared, else it returns the distance in coord dimension
@@ -113,6 +117,8 @@ int main()
 	calcekin();		//Calculate initial kinetic energy
 	printimage();
 	output(0);//Also write output to file
+
+
 	cout << "Starting thermalization\n";
 	for (int perc=0; perc < notices; perc++)
 	{
@@ -120,12 +126,24 @@ int main()
 		{
 			if (loop%listinterval==0) updatelist();
 			if (loop%loopsperimage==0) printimage();
-			if (loop%loopsperthermdatastore==0) printdata(1);
-			
 			if (loop%rescaleiter==0) correctvelocities();	//Rescale velocities for correct temperature
-		
+			
 			displace();
 			t += dt;
+			if (loop%loopsperthermdatastore==0) printdata(1);
+			/*
+			//Pressure check
+			if (loop==9000)
+			{
+				
+				ofstream file("temp.dat");
+				for (int i=0;i<N;i++)
+					file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " ";
+					file << force[i][0] << " " << force[i][1] << " " << force[i][2] << endl;
+					cout << "Pressure=" << pressure << endl;
+					file.close();
+					cin.ignore();
+			}*/
 		}
 
 		cout << "Percent done: " << (perc+1) * 100 / notices << "%";
@@ -134,13 +152,18 @@ int main()
 		cout << "\t time left: " << floor(timeleft/60) << "m " << round(mod(timeleft,60)) << "s\n";
 	}
 	output(1);	//Write thermalization time to file
+	
+
 	cout << "\nStarting Simulation\n";
 	tmeasurestart=t;			//Measurement starts at this time
+	
 	for (int i=0;i<N;i++)			//Initial positions for diffusion
 		for (int j=0;j<3;j++)
 			posinit[i][j] = pos[i][j];
+
 	correctvelocities();
 	cout << "Temperature equals " << instantaneoustemp() << endl;
+	
 	einit = epot + ekin;
 
 	for (int perc=0; perc < notices; perc++)
@@ -149,10 +172,11 @@ int main()
 		{
 			if (loop%listinterval==0) updatelist();
 			if (loop%loopsperimage==0) printimage();
-			if (loop%loopsperdatastore==0) printdata(0,t-tmeasurestart);
 			displace();
 			t += dt;
+			if (loop%loopsperdatastore==0) printdata(0,t-tmeasurestart);
 		}
+		
 		cout << "Percent done: " << (perc+1) * 100 / notices << "%";
 		cout << "\ttime simulated: " << double(clock() - begin) / CLOCKS_PER_SEC << " s";
 		double total = double( (thermiter + iterations));
@@ -161,6 +185,7 @@ int main()
 		cout << "\t time left: " << floor(timeleft/60) << "m " << round(mod(timeleft,60)) << "s\n";
 		cout << "diffusion: " << diffusion << "\tpressure: " << pressure << endl;
 	}
+
 	diffusion=0;
 	for (int i=0;i<N;i++)
 		for (int j=0;j<3;j++)
@@ -193,17 +218,32 @@ void correctvelocities()
 
 }
 
+void calcrdf()
+{
+	memset(rdfarr,0,sizeof(rdfarr));
+	for(int i=0;i<N;i++)
+	{
+		for (int j<N;j++)
+		{
+			if (i!=j)
+			{
+				dist
+			}
+		}
+	}
+	for (double r=rdfdr;r<rdfcutoff;r+=rdfdr)
+		rdfarr *= 2. * L*L*L / ( N * (N-1) * (4*pi*r*r*rdfdr));
+}
+
 void updatelist()
 {
 	memset(nlist,0,sizeof(nlist));
 	for (int i=0; i<N-1; i++)
 		for (int j=i+1; j<N; j++)
-			if( dist(i,j,3) < rc2)
+			if( dist(i,j,3) < rv2)
 			{
-				//nlist[j]++;
 				list[i][nlist[i]] = j;
 				nlist[i]++;
-				//list[j][nlist[j]] = i;
 			}
 }
 
@@ -215,17 +255,19 @@ void displace()
 		for (int i=0;i<3;i++)
 		{
 			vel[p][i] += force[p][i]*dt/2.;
-			ekin += 0.5 * vel[p][i] * vel[p][i];
 			pos[p][i] = pos[p][i] + vel[p][i] * dt;
 		}
 	}
-	ekin /= double(N) ;	//To make it per particle
 	calcforce();
 	//cout << "epot=" << epot << endl;
 	//cin.ignore();
 	for (int p=0;p<N;p++)
 		for (int i=0;i<3;i++)
+		{
 			vel[p][i] += force[p][i] * dt / 2.;
+			ekin += 0.5 * vel[p][i] * vel[p][i];
+		}
+	ekin /= double(N) ;	//To make it per particle
 }
 
 
@@ -263,8 +305,10 @@ void calcforce()
 			}
 		}
 	}
+
 	epot /= N;
-	pressure = 1 + pressure/double(N*3*T);
+	pressure = 1 + pressure/(double(N)*3*T);
+
 }
 
 void calcekin()
@@ -408,7 +452,7 @@ void initialize()
 				pos[i][2] = z * d / 2;
 				for (int j=0;j<3;j++)
 				{
-					vel[i][j]=normalrand();
+				vel[i][j]=normalrand();
 					sumv[j] +=vel[i][j];
 				}
 				i++;
