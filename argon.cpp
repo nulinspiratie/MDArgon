@@ -19,11 +19,15 @@
 #define rc2 9			//Cutoff length squared
 #define drv2 3			//Extra length for nn list
 
-#define dt 0.001		//timestep
-#define iterations 20000	//number of iterations
+#define rdfdr 0.05		//interval for radial distribution function
+#define rdfcutoff L/2		//cutoff radius for radial distribution function
 
-#define thermiter 5000	//number of thermalization iterations
-#define rescaleiter 500	//number of iterations between temperature rescali
+#define dt 0.001		//timestep
+
+#define iterations 5000	//number of iterations
+#define thermiter 2000		//number of thermalization iterations
+#define rescaleiter 500		//number of iterations between temperature rescaling
+#define rdfiter 100		//number of iterations between rdf storage
 
 #define loopsperdatastore 100	//loops before data is stored
 #define loopsperthermdatastore 50	//loops before thermalization data is stored
@@ -50,6 +54,10 @@ double tmeasurestart=0;		//Actual measurement starting time
 double diffusion=0;		//Diffusion
 double pressure=0;
 
+const int rdfsize=rdfcutoff/rdfdr;
+double rdfarr[rdfsize];
+
+
 clock_t begin;
 int nlist[N]={};		//Verlet particle number list
 double list[N][N]={};
@@ -64,7 +72,7 @@ void calcrdf();				//Calculate the radial distribution function
 void calcforce();
 void calcekin();			//To calculate the initial kinetic energy
 double dist(int i, int j,int coord=3);	//if coord=3, it returns the norm squared, else it returns the distance in coord dimension
-void printdata(bool thermalize=0,double time=0);
+void printdata(int type=0,double time=0);
 void printimage();
 void output(int stage);
 double normalrand();
@@ -89,18 +97,22 @@ int main()
 	//Create folders and files
 	sprintf(folder,"data/%g-%g-%d-%g/",(double)T,(double)rho,n,dt);
 	mkdir(folder, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-	//sprintf(folder,"data/%g-%g-%d-%g/images",(double)T,(double)rho,n);
+	
 	sprintf(filename,"%simages",folder);
 	mkdir(filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-	//sprintf(folder,"data/%g-%g-%d-%g/data.dat",(double)T,(double)rho,n);
+	
 	sprintf(filename,"%sdata.dat",folder);
 	ofstream file(filename);
 	file.close();
-	//sprintf(folder,"data/%g-%g-%d-%g/thermdata.dat",(double)T,(double)rho,n);
+	
 	sprintf(filename,"%sthermdata.dat",folder);
 	file.open(filename);
 	file.close();
 	
+	sprintf(filename,"%srdf.dat",folder);
+	file.open(filename);
+	file.close();
+
 	//Check if not too many images will be made
 	if ( (iterations + thermiter) / loopsperimage > 1000)
 	{
@@ -127,7 +139,7 @@ int main()
 			if (loop%listinterval==0) updatelist();
 			if (loop%loopsperimage==0) printimage();
 			if (loop%rescaleiter==0) correctvelocities();	//Rescale velocities for correct temperature
-			
+
 			displace();
 			t += dt;
 			if (loop%loopsperthermdatastore==0) printdata(1);
@@ -135,14 +147,14 @@ int main()
 			//Pressure check
 			if (loop==9000)
 			{
-				
-				ofstream file("temp.dat");
-				for (int i=0;i<N;i++)
-					file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " ";
-					file << force[i][0] << " " << force[i][1] << " " << force[i][2] << endl;
-					cout << "Pressure=" << pressure << endl;
-					file.close();
-					cin.ignore();
+
+			ofstream file("temp.dat");
+			for (int i=0;i<N;i++)
+			file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " ";
+			file << force[i][0] << " " << force[i][1] << " " << force[i][2] << endl;
+			cout << "Pressure=" << pressure << endl;
+			file.close();
+			cin.ignore();
 			}*/
 		}
 
@@ -152,18 +164,18 @@ int main()
 		cout << "\t time left: " << floor(timeleft/60) << "m " << round(mod(timeleft,60)) << "s\n";
 	}
 	output(1);	//Write thermalization time to file
-	
+
 
 	cout << "\nStarting Simulation\n";
 	tmeasurestart=t;			//Measurement starts at this time
-	
+
 	for (int i=0;i<N;i++)			//Initial positions for diffusion
 		for (int j=0;j<3;j++)
 			posinit[i][j] = pos[i][j];
 
 	correctvelocities();
 	cout << "Temperature equals " << instantaneoustemp() << endl;
-	
+
 	einit = epot + ekin;
 
 	for (int perc=0; perc < notices; perc++)
@@ -175,8 +187,9 @@ int main()
 			displace();
 			t += dt;
 			if (loop%loopsperdatastore==0) printdata(0,t-tmeasurestart);
+			if (loop%rdfiter==0) calcrdf();
 		}
-		
+
 		cout << "Percent done: " << (perc+1) * 100 / notices << "%";
 		cout << "\ttime simulated: " << double(clock() - begin) / CLOCKS_PER_SEC << " s";
 		double total = double( (thermiter + iterations));
@@ -223,16 +236,15 @@ void calcrdf()
 	memset(rdfarr,0,sizeof(rdfarr));
 	for(int i=0;i<N;i++)
 	{
-		for (int j<N;j++)
+		for (int j=0;j<N;j++)
 		{
 			if (i!=j)
-			{
-				dist
-			}
+				rdfarr[int( sqrt( dist(i,j) )/rdfdr )]+=1;
 		}
 	}
-	for (double r=rdfdr;r<rdfcutoff;r+=rdfdr)
-		rdfarr *= 2. * L*L*L / ( N * (N-1) * (4*pi*r*r*rdfdr));
+	for (int i=0;i<int(rdfcutoff/rdfdr);i++)
+		rdfarr[i] *= 2. * L*L*L / ( N * (N-1) * (4*pi * ((i+0.5)*rdfdr) * ((i+0.5)*rdfdr) *rdfdr));
+	printdata(2);
 }
 
 void updatelist()
@@ -259,8 +271,6 @@ void displace()
 		}
 	}
 	calcforce();
-	//cout << "epot=" << epot << endl;
-	//cin.ignore();
 	for (int p=0;p<N;p++)
 		for (int i=0;i<3;i++)
 		{
@@ -342,17 +352,27 @@ double dist(int i, int j, int coord)
 }
 
 
-void printdata(bool thermalize,double time)
+void printdata(int type,double time)
 {
 	ofstream file;
-	if (thermalize)
+	if (type==1)
 	{
 		//sprintf(filename,"data/%g-%g-%d/thermdata.dat",(double)T,(double)rho,n);
 		sprintf(filename,"%sthermdata.dat",folder);
 		file.open(filename,fstream::app);
 		file << ekin + epot << " " << ekin << " " << epot << endl;
 	}
-	else 
+	else if (type==2)
+	{
+		sprintf(filename,"%srdf.dat",folder);
+		file.open(filename,fstream::app);
+		for (int i=0;i<rdfsize;i++)
+		{
+			file << rdfarr[i] << " ";
+		}
+		file << endl;
+	}
+	else
 	{
 		//sprintf(filename,"data/%g-%g-%d/data.dat",(double)T,(double)rho,n);
 		sprintf(filename,"%sdata.dat",folder);
@@ -452,7 +472,7 @@ void initialize()
 				pos[i][2] = z * d / 2;
 				for (int j=0;j<3;j++)
 				{
-				vel[i][j]=normalrand();
+					vel[i][j]=normalrand();
 					sumv[j] +=vel[i][j];
 				}
 				i++;
