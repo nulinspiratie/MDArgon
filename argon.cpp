@@ -14,7 +14,7 @@
 
 
 #define rho 0.80			//number density
-#define n 6 			//unit cells per direction
+#define n 8 			//unit cells per direction
 #define T 1.01			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
 #define drv2 3			//Extra length for nn list
@@ -22,12 +22,12 @@
 #define rdfdr 0.002		//interval for radial distribution function
 #define rdfcutoff L/2		//cutoff radius for radial distribution function
 
-#define dt 0.001		//timestep
+#define dt 0.0005		//timestep
 
-#define iterations 5000	//number of iterations
-#define thermiter 2000		//number of thermalization iterations
-#define rescaleiter 500		//number of iterations between temperature rescaling
-#define rdfiter 100		//number of iterations between rdf storage
+#define iterations 60000	//number of iterations
+#define thermiter 15000		//number of thermalization iterations
+#define rescaleiter 200		//number of iterations between temperature rescaling
+#define rdfiter 1000		//number of iterations between rdf storage
 
 #define loopsperdatastore 100	//loops before data is stored
 #define loopsperthermdatastore 50	//loops before thermalization data is stored
@@ -81,7 +81,7 @@ double mod(double num, double div);
 
 using namespace std;
 //using namespace arma;
-int main()
+int main(int argc, char * argv[])
 {
 	cout << "\n\n\n\n";
 	cout << "Molecular Dynamics simulation of Argon\n\n";
