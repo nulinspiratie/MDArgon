@@ -19,7 +19,7 @@
 #define rc2 9			//Cutoff length squared
 #define drv2 3			//Extra length for nn list
 
-#define rdfdr 0.05		//interval for radial distribution function
+#define rdfdr 0.002		//interval for radial distribution function
 #define rdfcutoff L/2		//cutoff radius for radial distribution function
 
 #define dt 0.001		//timestep
@@ -239,10 +239,14 @@ void calcrdf()
 		for (int j=0;j<N;j++)
 		{
 			if (i!=j)
-				rdfarr[int( sqrt( dist(i,j) )/rdfdr )]+=1;
+			{
+				int k=round(sqrt(dist(i,j,3))/rdfdr);
+				if (k < rdfsize)
+				rdfarr[k] += 1;
+			}
 		}
 	}
-	for (int i=0;i<int(rdfcutoff/rdfdr);i++)
+	for (int i=0;i<rdfsize;i++)
 		rdfarr[i] *= 2. * L*L*L / ( N * (N-1) * (4*pi * ((i+0.5)*rdfdr) * ((i+0.5)*rdfdr) *rdfdr));
 	printdata(2);
 }
