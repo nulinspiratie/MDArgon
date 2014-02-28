@@ -13,34 +13,35 @@
 #include <sys/stat.h>
 
 
-#define rho 0.80			//number density
 #define n 8 			//unit cells per direction
-#define T 1.01			//Temperature (actually kT/m)
 #define rc2 9			//Cutoff length squared
-#define drv2 3			//Extra length for nn list
+#define drv2 5			//Extra length for nn list
 
-#define rdfdr 0.002		//interval for radial distribution function
-#define rdfcutoff L/2		//cutoff radius for radial distribution function
+#define rdfdr 0.001		//interval for radial distribution function
+#define rdfcutoff 5		//cutoff radius for radial distribution function
 
 #define dt 0.0005		//timestep
 
-#define iterations 60000	//number of iterations
-#define thermiter 15000		//number of thermalization iterations
+#define iterations 250000	//number of iterations
+#define thermiter 25000		//number of thermalization iterations
 #define rescaleiter 200		//number of iterations between temperature rescaling
 #define rdfiter 1000		//number of iterations between rdf storage
 
-#define loopsperdatastore 100	//loops before data is stored
+#define loopsperdatastore 50	//loops before data is stored
 #define loopsperthermdatastore 50	//loops before thermalization data is stored
-#define loopsperimage 100000	//loops before another printed image is made
-#define listinterval 10		//Update verlet list every listinterval loops
+#define loopsperimage 10000	//loops before another printed image is made
+#define listinterval 50		//Update verlet list every listinterval loops
 
 #define notices 5
 
 #define N 4*n*n*n		//number of particles
-#define L pow(N/rho,1/3.0)	//box dimension
 #define pi 3.141592653589793
 #define ecut 4*(1/pow(rc2,6) - 1/pow(rc2,3))
 #define rv2 rc2 + drv2		//Verlet list cutoff distance
+
+double T;			//Temperature
+double rho;			//Density
+double L;			//Box length
 
 double pos[N][3]={};		//positions
 double posinit[N][3]={};	//Positions right after thermalization (For diffusion)
@@ -83,6 +84,15 @@ using namespace std;
 //using namespace arma;
 int main(int argc, char * argv[])
 {
+	if (argc!=3)
+	{
+		cout << "Must have two parameters.\nExiting...\n";
+		return 1;
+	}
+	T=atof(argv[1]);
+	rho=atof(argv[2]);
+	L = pow(N/rho,1/3.0);
+
 	cout << "\n\n\n\n";
 	cout << "Molecular Dynamics simulation of Argon\n\n";
 	cout << "Number of particles: " << N << endl;
@@ -143,22 +153,9 @@ int main(int argc, char * argv[])
 			displace();
 			t += dt;
 			if (loop%loopsperthermdatastore==0) printdata(1);
-			/*
-			//Pressure check
-			if (loop==9000)
-			{
-
-			ofstream file("temp.dat");
-			for (int i=0;i<N;i++)
-			file << pos[i][0] << " " << pos[i][1] << " " << pos[i][2] << " ";
-			file << force[i][0] << " " << force[i][1] << " " << force[i][2] << endl;
-			cout << "Pressure=" << pressure << endl;
-			file.close();
-			cin.ignore();
-			}*/
 		}
 
-		cout << "Percent done: " << (perc+1) * 100 / notices << "%";
+			cout << "Percent done: " << (perc+1) * 100 / notices << "%";
 		cout << "\ttime simulated: " << double(clock() - begin) / CLOCKS_PER_SEC << " s";
 		double timeleft = (double(notices - (perc+1)) / (perc+1) * double(clock() - begin)) / CLOCKS_PER_SEC;
 		cout << "\t time left: " << floor(timeleft/60) << "m " << round(mod(timeleft,60)) << "s\n";
@@ -242,7 +239,7 @@ void calcrdf()
 			{
 				int k=round(sqrt(dist(i,j,3))/rdfdr);
 				if (k < rdfsize)
-				rdfarr[k] += 1;
+					rdfarr[k] += 1;
 			}
 		}
 	}
